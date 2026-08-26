@@ -62,6 +62,14 @@ a běžící `npm start`):
 node test/smoke.mjs
 ```
 
+## Nasazení
+
+Push do větve `main` spustí workflow `.github/workflows/pages.yml`, který projede
+testy a publikuje statické soubory na GitHub Pages:
+<https://josefkoloros.github.io/delay/>
+
+V nastavení repozitáře (Settings → Pages) musí být zdroj přepnutý na **GitHub Actions**.
+
 ## Struktura
 
 ```
@@ -70,6 +78,7 @@ styles.css        vzhled
 js/delay.js       výpočetní jádro (čisté funkce, bez DOM)
 js/app.js         propojení s uživatelským rozhraním, ukládání, export
 server.js         minimální statický server pro lokální spuštění
+.github/workflows nasazení na GitHub Pages
 test/             testy
 ```
 
