@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delay kalkulačka pro reprobedny</title>
+<meta name="description" content="Výpočet zpoždění delay reproduktorů podle vzdálenosti, teploty a vlhkosti vzduchu.">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔊</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">🔊</span>
+    <div>
+      <h1>Delay kalkulačka</h1>
+      <p class="brand-sub">Časové zarovnání delay reproduktorů</p>
+    </div>
+  </div>
+  <div class="speed-readout" title="Aktuální rychlost zvuku podle zadaných podmínek">
+    <span class="speed-label">Rychlost zvuku</span>
+    <strong><span id="speedValue">343.6</span> m/s</strong>
+  </div>
+</header>
+
+<main>
+  <!-- Podmínky prostředí -->
+  <section class="card" aria-labelledby="h-conditions">
+    <h2 id="h-conditions">Podmínky a nastavení</h2>
+    <div class="grid grid-4">
+      <label class="field">
+        <span>Teplota vzduchu</span>
+        <div class="input-wrap">
+          <input type="number" id="temp" value="20" step="0.5" min="-30" max="55">
+          <span class="unit">°C</span>
+        </div>
+        <input type="range" id="tempRange" value="20" step="0.5" min="-10" max="45">
+      </label>
+
+      <label class="field">
+        <span>Relativní vlhkost</span>
+        <div class="input-wrap">
+          <input type="number" id="humidity" value="50" step="1" min="0" max="100">
+          <span class="unit">%</span>
+        </div>
+        <input type="range" id="humidityRange" value="50" step="1" min="0" max="100">
+      </label>
+
+      <label class="field">
+        <span>Jednotka vzdálenosti</span>
+        <select id="unit">
+          <option value="m" selected>metry (m)</option>
+          <option value="ft">stopy (ft)</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Vzorkovací frekvence</span>
+        <select id="sampleRate">
+          <option value="44100">44.1 kHz</option>
+          <option value="48000" selected>48 kHz</option>
+          <option value="88200">88.2 kHz</option>
+          <option value="96000">96 kHz</option>
+          <option value="192000">192 kHz</option>
+        </select>
+      </label>
+    </div>
+    <p class="hint">Rychlost zvuku počítáme jako <code>331,3 · √(1 + T/273,15) + 0,0124 · RH</code>. Deset stupňů rozdílu
+      posune zpoždění na 100 m zhruba o 5 ms – před akcí si teplotu zkontrolujte.</p>
+  </section>
+
+  <!-- Hlavní kalkulačka -->
+  <section class="card" aria-labelledby="h-main">
+    <h2 id="h-main">Výpočet delay linky</h2>
+    <div class="grid grid-2">
+      <label class="field">
+        <span>Vzdálenost od hlavního systému</span>
+        <div class="input-wrap">
+          <input type="number" id="distance" value="40" step="0.1" min="0">
+          <span class="unit" id="distUnit">m</span>
+        </div>
+        <input type="range" id="distanceRange" value="40" step="0.1" min="0" max="200">
+      </label>
+
+      <label class="field">
+        <span>Haasův offset (přidané zpoždění)</span>
+        <div class="input-wrap">
+          <input type="number" id="haas" value="10" step="1" min="-50" max="80">
+          <span class="unit">ms</span>
+        </div>
+        <input type="range" id="haasRange" value="10" step="1" min="0" max="40">
+      </label>
+    </div>
+
+    <div class="results">
+      <div class="result result-primary">
+        <span class="result-label">Nastavit na procesoru</span>
+        <span class="result-value"><output id="totalMs">126.4</output><small>ms</small></span>
+      </div>
+      <div class="result">
+        <span class="result-label">Doba šíření zvuku</span>
+        <span class="result-value"><output id="propMs">116.4</output><small>ms</small></span>
+      </div>
+      <div class="result">
+        <span class="result-label">Vzorky</span>
+        <span class="result-value"><output id="samples">6067</output><small>smp</small></span>
+      </div>
+      <div class="result">
+        <span class="result-label">Vzdálenost</span>
+        <span class="result-value"><output id="distAlt">131.2</output><small id="distAltUnit">ft</small></span>
+      </div>
+    </div>
+
+    <p class="status" id="haasStatus">V Haasově okně – lokalizace zůstává u hlavního systému.</p>
+    <button type="button" class="btn" id="addLine">Přidat do seznamu linek</button>
+  </section>
+
+  <!-- Seznam delay linek -->
+  <section class="card" aria-labelledby="h-lines">
+    <div class="card-head">
+      <h2 id="h-lines">Delay linky</h2>
+      <div class="card-actions">
+        <button type="button" class="btn btn-ghost" id="newLine">Nová linka</button>
+        <button type="button" class="btn btn-ghost" id="exportCsv">Export CSV</button>
+        <button type="button" class="btn btn-ghost btn-danger" id="clearLines">Vymazat vše</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table id="linesTable">
+        <thead>
+          <tr>
+            <th scope="col">Název</th>
+            <th scope="col">Vzdálenost <span class="th-unit" data-unit>m</span></th>
+            <th scope="col">Offset ms</th>
+            <th scope="col">Šíření ms</th>
+            <th scope="col">Celkem ms</th>
+            <th scope="col">Vzorky</th>
+            <th scope="col"><span class="sr-only">Akce</span></th>
+          </tr>
+        </thead>
+        <tbody id="linesBody"></tbody>
+      </table>
+    </div>
+    <p class="empty" id="linesEmpty">Zatím žádné linky. Přidejte první tlačítkem výše – uloží se do prohlížeče.</p>
+  </section>
+
+  <!-- Zpětný převod -->
+  <section class="card" aria-labelledby="h-reverse">
+    <h2 id="h-reverse">Zpětný převod</h2>
+    <p class="hint">Znáte hodnotu z procesoru a chcete vědět, jaké vzdálenosti odpovídá.</p>
+    <div class="grid grid-2">
+      <label class="field">
+        <span>Zpoždění</span>
+        <div class="input-wrap">
+          <input type="number" id="revMs" value="100" step="0.1" min="0">
+          <span class="unit">ms</span>
+        </div>
+      </label>
+      <div class="field">
+        <span>Odpovídá vzdálenosti</span>
+        <div class="result result-primary result-inline">
+          <span class="result-value"><output id="revDistance">34.4</output><small id="revUnit">m</small></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Referenční tabulka -->
+  <section class="card" aria-labelledby="h-ref">
+    <div class="card-head">
+      <h2 id="h-ref">Rychlá referenční tabulka</h2>
+      <span class="badge" id="refBadge">bez offsetu</span>
+    </div>
+    <div class="table-scroll">
+      <table id="refTable">
+        <thead>
+          <tr><th scope="col">Vzdálenost</th><th scope="col">Zpoždění</th><th scope="col">Vzorky</th></tr>
+        </thead>
+        <tbody id="refBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card notes" aria-labelledby="h-notes">
+    <h2 id="h-notes">Jak na to v praxi</h2>
+    <ol>
+      <li>Změřte vzdálenost mezi hlavním systémem (zdrojem zvuku, ne nutně přední hranou pódia) a delay reproduktorem.</li>
+      <li>Zadejte teplotu a vlhkost v sále nebo venku – rychlost zvuku na nich přímo závisí.</li>
+      <li>Základní zpoždění je doba šíření. Přidejte 5–15 ms Haasova offsetu, aby posluchač lokalizoval zvuk na pódium.</li>
+      <li>Hodnotu nastavte na výstupu delay reproduktoru v procesoru; ostatní výstupy nechte beze změny.</li>
+      <li>Zkontrolujte polaritu a případný vlastní delay měniče – ten se k vypočtené hodnotě přičítá.</li>
+    </ol>
+  </section>
+</main>
+
+<footer>
+  <p>Data se ukládají jen ve vašem prohlížeči. Funguje i offline.</p>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
