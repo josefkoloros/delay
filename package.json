@@ -1,0 +1,11 @@
+{
+  "name": "delay-kalkulacka",
+  "version": "1.0.0",
+  "description": "Kalkulačka zpoždění delay reproduktorů pro ozvučovací systémy",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node server.js"
+  }
+}
