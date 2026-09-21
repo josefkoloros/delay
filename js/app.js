@@ -2,6 +2,11 @@ import {
   speedOfSound, computeLine, delayToDistance, msToSamples,
   toMeters, fromMeters, haasStatus,
 } from './delay.js';
+import {
+  STORAGE_VERSION, migrateStorage, newEvent, nextLocalId, mergeGoogleEvents,
+  sortEvents, eventFromGoogle, eventLabel, formatEventDate,
+} from './events.js';
+import * as gcal from './google.js';
 
 const STORAGE_KEY = 'delay-kalkulacka/v1';
 const $ = (id) => document.getElementById(id);
@@ -17,14 +22,34 @@ const el = {
   distAlt: $('distAlt'), distAltUnit: $('distAltUnit'),
   haasStatus: $('haasStatus'),
   addLine: $('addLine'), newLine: $('newLine'), clearLines: $('clearLines'), exportCsv: $('exportCsv'),
-  linesBody: $('linesBody'), linesEmpty: $('linesEmpty'),
+  linesBody: $('linesBody'), linesEmpty: $('linesEmpty'), linesEventName: $('linesEventName'),
   revMs: $('revMs'), revDistance: $('revDistance'), revUnit: $('revUnit'),
   refBody: $('refBody'), refBadge: $('refBadge'),
+  // Akce
+  eventSelect: $('eventSelect'), eventsEmpty: $('eventsEmpty'), eventForm: $('eventForm'),
+  newEvent: $('newEvent'), deleteEvent: $('deleteEvent'),
+  eventName: $('eventName'), eventStart: $('eventStart'), eventLocation: $('eventLocation'), eventNote: $('eventNote'),
+  eventOrigin: $('eventOrigin'),
+  // Google
+  googlePanel: $('googlePanel'), googleClientId: $('googleClientId'),
+  googleSignIn: $('googleSignIn'), googleSignOut: $('googleSignOut'),
+  googleTools: $('googleTools'), googleCalendar: $('googleCalendar'), googleRange: $('googleRange'),
+  googleLoad: $('googleLoad'), googleImportAll: $('googleImportAll'),
+  googleStatus: $('googleStatus'), googleList: $('googleList'),
 };
 
-/** Linky drží vzdálenost vždy v metrech, zobrazení se převádí podle zvolené jednotky. */
-let lines = [];
-let nextId = 1;
+// --- Stav ------------------------------------------------------------------
+
+/** Akce; každá drží vlastní delay linky (vzdálenost vždy v metrech). */
+let events = [];
+let activeId = null;
+let nextLineId = 1;
+let google = { clientId: '', calendarId: 'primary' };
+/** Naposledy načtené události z Google (jen v paměti, po obnovení stránky se načtou znovu). */
+let googleItems = [];
+
+const activeEvent = () => events.find((e) => e.id === activeId) ?? null;
+const lines = () => activeEvent()?.lines ?? [];
 
 // --- Formátování -----------------------------------------------------------
 
@@ -40,7 +65,7 @@ const num = (input, fallback = 0) => {
   return Number.isFinite(v) ? v : fallback;
 };
 
-// --- Stav ------------------------------------------------------------------
+// --- Ukládání --------------------------------------------------------------
 
 function conditions() {
   return {
@@ -54,9 +79,14 @@ function conditions() {
 function save() {
   const c = conditions();
   const payload = {
-    temp: c.tempC, humidity: c.humidity, unit: c.unit, sampleRate: c.sampleRate,
-    distance: num(el.distance, 0), haas: num(el.haas, 0), revMs: num(el.revMs, 0),
-    lines,
+    version: STORAGE_VERSION,
+    settings: {
+      temp: c.tempC, humidity: c.humidity, unit: c.unit, sampleRate: c.sampleRate,
+      distance: num(el.distance, 0), haas: num(el.haas, 0), revMs: num(el.revMs, 0),
+    },
+    activeId,
+    google,
+    events,
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -72,26 +102,22 @@ function load() {
   } catch {
     data = null;
   }
-  if (!data || typeof data !== 'object') return;
+  const state = migrateStorage(data);
+  const s = state.settings;
 
-  if (Number.isFinite(data.temp)) el.temp.value = data.temp;
-  if (Number.isFinite(data.humidity)) el.humidity.value = data.humidity;
-  if (data.unit === 'm' || data.unit === 'ft') el.unit.value = data.unit;
-  if (Number.isFinite(data.sampleRate)) el.sampleRate.value = String(data.sampleRate);
-  if (Number.isFinite(data.distance)) el.distance.value = data.distance;
-  if (Number.isFinite(data.haas)) el.haas.value = data.haas;
-  if (Number.isFinite(data.revMs)) el.revMs.value = data.revMs;
+  if (Number.isFinite(s.temp)) el.temp.value = s.temp;
+  if (Number.isFinite(s.humidity)) el.humidity.value = s.humidity;
+  if (s.unit) el.unit.value = s.unit;
+  if (Number.isFinite(s.sampleRate)) el.sampleRate.value = String(s.sampleRate);
+  if (Number.isFinite(s.distance)) el.distance.value = s.distance;
+  if (Number.isFinite(s.haas)) el.haas.value = s.haas;
+  if (Number.isFinite(s.revMs)) el.revMs.value = s.revMs;
 
-  if (Array.isArray(data.lines)) {
-    lines = data.lines
-      .filter((l) => l && Number.isFinite(l.meters))
-      .map((l) => ({
-        id: nextId++,
-        name: String(l.name ?? `Delay ${nextId}`).slice(0, 40),
-        meters: Number(l.meters),
-        haas: Number.isFinite(l.haas) ? Number(l.haas) : 0,
-      }));
-  }
+  events = sortEvents(state.events);
+  activeId = state.activeId;
+  nextLineId = state.nextLineId;
+  google = state.google;
+  el.googleClientId.value = google.clientId;
 }
 
 // --- Přepočet --------------------------------------------------------------
@@ -126,16 +152,282 @@ function render() {
   const revMeters = delayToDistance(num(el.revMs, 0), speed);
   el.revDistance.textContent = fmt1.format(fromMeters(revMeters, c.unit));
 
+  renderEvents();
   renderLines(c, speed);
   renderReference(c, speed);
   save();
 }
 
-function renderLines(c, speed) {
-  el.linesBody.replaceChildren();
-  el.linesEmpty.hidden = lines.length > 0;
+// --- Akce ------------------------------------------------------------------
 
-  for (const line of lines) {
+/** ISO řetězec → hodnota pro <input type="datetime-local"> v místním čase. */
+function toLocalInput(event) {
+  if (!event?.start) return '';
+  if (event.allDay) return `${event.start.slice(0, 10)}T00:00`;
+  const d = new Date(event.start);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderEvents() {
+  // Změna termínu může změnit pořadí, seznam držíme vždy seřazený.
+  events = sortEvents(events);
+  const active = activeEvent();
+  el.eventsEmpty.hidden = events.length > 0;
+  el.eventSelect.hidden = events.length === 0;
+  el.eventForm.hidden = !active;
+  el.deleteEvent.disabled = !active;
+
+  el.eventSelect.replaceChildren(...events.map((e) => {
+    const opt = document.createElement('option');
+    opt.value = e.id;
+    opt.textContent = eventLabel(e);
+    opt.selected = e.id === activeId;
+    return opt;
+  }));
+
+  if (active) {
+    // Pole přepisujeme jen když se hodnota liší, aby uživateli neuskočil kurzor při psaní.
+    setIfChanged(el.eventName, active.name);
+    setIfChanged(el.eventStart, toLocalInput(active));
+    setIfChanged(el.eventLocation, active.location);
+    setIfChanged(el.eventNote, active.note);
+    el.eventOrigin.hidden = !active.googleId;
+    el.eventOrigin.dataset.level = 'ok';
+    el.eventOrigin.textContent = active.googleId
+      ? 'Převzato z Google kalendáře. Při dalším načtení se název, termín a místo aktualizují podle kalendáře; delay linky zůstanou.'
+      : '';
+    el.linesEventName.textContent = `– ${active.name}`;
+  } else {
+    el.eventOrigin.hidden = true;
+    el.linesEventName.textContent = '';
+  }
+}
+
+function setIfChanged(input, value) {
+  if (input.value !== value && document.activeElement !== input) input.value = value;
+}
+
+function selectEvent(id) {
+  activeId = id;
+  render();
+}
+
+function createEvent(overrides = {}) {
+  const e = newEvent(nextLocalId(events), overrides);
+  events = sortEvents([...events, e]);
+  activeId = e.id;
+  render();
+  return e;
+}
+
+function ensureEvent() {
+  return activeEvent() ?? createEvent();
+}
+
+function updateActive(patch) {
+  const active = activeEvent();
+  if (!active) return;
+  Object.assign(active, patch);
+  render();
+}
+
+el.eventSelect.addEventListener('change', () => selectEvent(el.eventSelect.value));
+el.newEvent.addEventListener('click', () => {
+  createEvent();
+  el.eventName.focus();
+  el.eventName.select();
+});
+el.deleteEvent.addEventListener('click', () => {
+  const active = activeEvent();
+  if (!active) return;
+  const count = active.lines.length;
+  const detail = count > 0 ? ` včetně ${count} delay linek` : '';
+  if (!confirm(`Smazat akci „${active.name}“${detail}? Z Google kalendáře se nic nemaže.`)) return;
+  events = events.filter((e) => e.id !== active.id);
+  activeId = events[0]?.id ?? null;
+  render();
+});
+
+el.eventName.addEventListener('input', () => {
+  const active = activeEvent();
+  if (!active) return;
+  active.name = el.eventName.value.trim().slice(0, 120) || 'Nová akce';
+  // Přejmenování se promítne do seznamu a nadpisu linek bez plného překreslení tabulky.
+  const opt = el.eventSelect.querySelector(`option[value="${CSS.escape(active.id)}"]`);
+  if (opt) opt.textContent = eventLabel(active);
+  el.linesEventName.textContent = `– ${active.name}`;
+  save();
+});
+el.eventStart.addEventListener('change', () => {
+  const v = el.eventStart.value;
+  updateActive(v ? { start: v, allDay: false, end: null } : { start: null, end: null, allDay: false });
+});
+el.eventLocation.addEventListener('input', () => {
+  const active = activeEvent();
+  if (active) { active.location = el.eventLocation.value.trim().slice(0, 120); save(); }
+});
+el.eventNote.addEventListener('input', () => {
+  const active = activeEvent();
+  if (active) { active.note = el.eventNote.value.trim().slice(0, 120); save(); }
+});
+
+// --- Google kalendář -------------------------------------------------------
+
+function googleStatus(text, level = 'ok') {
+  el.googleStatus.hidden = !text;
+  el.googleStatus.textContent = text;
+  el.googleStatus.dataset.level = level;
+}
+
+function setSignedIn(signedIn) {
+  el.googleSignIn.hidden = signedIn;
+  el.googleSignOut.hidden = !signedIn;
+  el.googleTools.hidden = !signedIn;
+  if (!signedIn) {
+    googleItems = [];
+    el.googleList.replaceChildren();
+    el.googleImportAll.hidden = true;
+  }
+}
+
+async function busy(button, fn) {
+  button.disabled = true;
+  try {
+    await fn();
+  } catch (err) {
+    googleStatus(err?.message || String(err), 'bad');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+el.googleClientId.addEventListener('change', () => {
+  google.clientId = el.googleClientId.value.trim();
+  save();
+});
+
+el.googleSignIn.addEventListener('click', () => busy(el.googleSignIn, async () => {
+  google.clientId = el.googleClientId.value.trim();
+  save();
+  googleStatus('Otevírám přihlášení Google…');
+  await gcal.signIn(google.clientId);
+  googleStatus('Načítám seznam kalendářů…');
+  const calendars = await gcal.listCalendars();
+  el.googleCalendar.replaceChildren(...calendars.map((c) => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.primary ? `${c.summary} (hlavní)` : c.summary;
+    return opt;
+  }));
+  const known = calendars.some((c) => c.id === google.calendarId);
+  el.googleCalendar.value = known ? google.calendarId : (calendars.find((c) => c.primary)?.id ?? calendars[0]?.id ?? '');
+  google.calendarId = el.googleCalendar.value || 'primary';
+  save();
+  setSignedIn(true);
+  googleStatus('Přihlášeno. Vyberte kalendář a načtěte události.');
+  await loadGoogleEvents();
+}));
+
+el.googleSignOut.addEventListener('click', () => {
+  gcal.signOut();
+  setSignedIn(false);
+  googleStatus('Odhlášeno.');
+});
+
+el.googleCalendar.addEventListener('change', () => {
+  google.calendarId = el.googleCalendar.value;
+  save();
+  busy(el.googleLoad, loadGoogleEvents);
+});
+
+el.googleLoad.addEventListener('click', () => busy(el.googleLoad, loadGoogleEvents));
+
+el.googleImportAll.addEventListener('click', () => {
+  importGoogle(googleItems);
+});
+
+function rangeFromSelect() {
+  const days = Number(el.googleRange.value);
+  const day = 86_400_000;
+  const now = Date.now();
+  return days >= 0
+    ? { timeMin: new Date(now - day), timeMax: new Date(now + days * day) }
+    : { timeMin: new Date(now + days * day), timeMax: new Date(now + 365 * day) };
+}
+
+async function loadGoogleEvents() {
+  if (!gcal.isSignedIn()) {
+    setSignedIn(false);
+    googleStatus('Přihlášení vypršelo, přihlaste se znovu.', 'warn');
+    return;
+  }
+  googleStatus('Načítám události…');
+  googleItems = (await gcal.listEvents(google.calendarId, rangeFromSelect()))
+    .filter((item) => eventFromGoogle(item, google.calendarId));
+  renderGoogleList();
+  googleStatus(googleItems.length === 0
+    ? 'V tomto období nejsou v kalendáři žádné události.'
+    : `Načteno ${googleItems.length} událostí. Klepnutím na „Převzít“ z ní uděláte akci.`);
+}
+
+function renderGoogleList() {
+  el.googleImportAll.hidden = googleItems.length === 0;
+  el.googleList.replaceChildren(...googleItems.map((item) => {
+    const g = eventFromGoogle(item, google.calendarId);
+    const existing = events.find((e) => e.googleId === g.googleId);
+    const li = document.createElement('li');
+
+    const info = document.createElement('div');
+    info.className = 'event-info';
+    const title = document.createElement('strong');
+    title.textContent = g.name;
+    const meta = document.createElement('span');
+    meta.className = 'event-meta';
+    meta.textContent = [formatEventDate(g), g.location].filter(Boolean).join(' · ');
+    info.append(title, meta);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = existing ? 'btn btn-ghost' : 'btn';
+    btn.textContent = existing ? (existing.id === activeId ? 'Vybráno' : 'Otevřít') : 'Převzít';
+    btn.disabled = Boolean(existing) && existing.id === activeId;
+    btn.addEventListener('click', () => importGoogle([item], g.googleId));
+
+    li.append(info, btn);
+    if (existing) li.classList.add('is-imported');
+    return li;
+  }));
+}
+
+/** Sloučí vybrané události do akcí a přepne na tu, která byla vybrána (nebo první novou). */
+function importGoogle(items, focusGoogleId = null) {
+  const before = new Set(events.map((e) => e.id));
+  const { events: merged, added, updated } = mergeGoogleEvents(events, items, google.calendarId);
+  events = merged;
+
+  const focus = focusGoogleId
+    ? events.find((e) => e.googleId === focusGoogleId)
+    : events.find((e) => !before.has(e.id));
+  if (focus) activeId = focus.id;
+
+  render();
+  renderGoogleList();
+  const parts = [];
+  if (added) parts.push(`${added} nových`);
+  if (updated) parts.push(`${updated} aktualizovaných`);
+  googleStatus(parts.length ? `Převzato: ${parts.join(', ')}.` : 'Akce už je převzatá a je aktuální.');
+}
+
+// --- Delay linky -----------------------------------------------------------
+
+function renderLines(c, speed) {
+  const list = lines();
+  el.linesBody.replaceChildren();
+  el.linesEmpty.hidden = list.length > 0;
+
+  for (const line of list) {
     const prop = (line.meters / speed) * 1000;
     const total = prop + line.haas;
     const tr = document.createElement('tr');
@@ -210,26 +502,30 @@ function removeButton(id) {
   btn.setAttribute('aria-label', 'Odebrat linku');
   btn.textContent = '×';
   btn.addEventListener('click', () => {
-    lines = lines.filter((l) => l.id !== id);
+    const active = activeEvent();
+    if (active) active.lines = active.lines.filter((l) => l.id !== id);
     render();
   });
   return btn;
 }
 
-// --- Akce ------------------------------------------------------------------
+// --- Akce nad linkami ------------------------------------------------------
 
 function addLine(meters, haas) {
+  // Bez akce linky nemají kam patřit – založíme ji automaticky.
+  const event = ensureEvent();
   // Číslujeme podle rostoucího id, aby po mazání nevznikaly duplicitní názvy.
-  lines.push({ id: nextId, name: `Delay ${nextId++}`, meters, haas });
+  event.lines.push({ id: nextLineId, name: `Delay ${nextLineId++}`, meters, haas });
   render();
 }
 
 function exportCsv() {
   const c = conditions();
   const speed = speedOfSound(c.tempC, c.humidity);
+  const active = activeEvent();
   const rows = [
     ['Nazev', 'Vzdalenost_m', 'Offset_ms', 'Sireni_ms', 'Celkem_ms', `Vzorky_${c.sampleRate}Hz`],
-    ...lines.map((l) => {
+    ...lines().map((l) => {
       const prop = (l.meters / speed) * 1000;
       const total = prop + l.haas;
       return [
@@ -242,14 +538,22 @@ function exportCsv() {
     [],
     [`Teplota_C=${c.tempC}`, `Vlhkost_%=${c.humidity}`, `Rychlost_zvuku_m_s=${speed.toFixed(2)}`],
   ];
+  if (active) {
+    rows.push([`Akce=${active.name.replace(/[";\r\n]/g, ' ')}`, `Termin=${formatEventDate(active)}`, `Misto=${active.location.replace(/[";\r\n]/g, ' ')}`]);
+  }
   const csv = rows.map((r) => r.join(';')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'delay-linky.csv';
+  a.download = active ? `delay-${slug(active.name)}.csv` : 'delay-linky.csv';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function slug(text) {
+  return text.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'akce';
 }
 
 // --- Propojení ovládacích prvků -------------------------------------------
@@ -295,8 +599,10 @@ el.addLine.addEventListener('click', () => {
 });
 el.newLine.addEventListener('click', () => addLine(0, 0));
 el.clearLines.addEventListener('click', () => {
-  if (lines.length === 0 || confirm('Opravdu smazat všechny delay linky?')) {
-    lines = [];
+  const active = activeEvent();
+  if (!active || active.lines.length === 0) return;
+  if (confirm(`Opravdu smazat všechny delay linky akce „${active.name}“?`)) {
+    active.lines = [];
     render();
   }
 });
@@ -305,4 +611,5 @@ el.exportCsv.addEventListener('click', exportCsv);
 load();
 updateDistanceRange();
 syncRanges();
+setSignedIn(false);
 render();

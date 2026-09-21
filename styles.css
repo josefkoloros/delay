@@ -87,7 +87,7 @@ main {
   font-size: 0.85rem; pointer-events: none;
 }
 
-input[type="number"], input[type="text"], select {
+input[type="number"], input[type="text"], input[type="datetime-local"], select {
   width: 100%;
   padding: 0.6rem 3rem 0.6rem 0.75rem;
   background: var(--bg-input);
@@ -97,7 +97,9 @@ input[type="number"], input[type="text"], select {
   font: inherit;
   font-variant-numeric: tabular-nums;
 }
-select { padding-right: 0.75rem; }
+select, input[type="datetime-local"] { padding-right: 0.75rem; }
+input[type="datetime-local"] { min-height: 2.75rem; }
+[hidden] { display: none !important; }
 input:focus-visible, select:focus-visible, button:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
@@ -181,6 +183,30 @@ table input[type="number"], table input[type="text"] {
   padding: 0.35rem 0.5rem; min-width: 5.5rem; text-align: right;
 }
 table input[type="text"] { text-align: left; min-width: 9rem; }
+
+/* Akce a Google kalendář */
+.h-sub { text-transform: none; letter-spacing: 0; color: var(--text); font-weight: 500; }
+.field-help { color: var(--muted); font-size: 0.75rem; }
+.btn:disabled { opacity: 0.55; cursor: default; filter: none; }
+
+.google { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.75rem 1rem; display: grid; gap: 1rem; }
+.google summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 0.5rem; }
+.google summary::-webkit-details-marker { display: none; }
+.google summary::before { content: "▸"; color: var(--muted); transition: transform 0.15s; }
+.google[open] summary::before { transform: rotate(90deg); }
+.google:not([open]) { gap: 0; }
+
+.event-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.event-list:empty { display: none; }
+.event-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 0.6rem 0.85rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-input);
+}
+.event-list li.is-imported { border-color: var(--ok); }
+.event-info { display: grid; gap: 0.1rem; min-width: 0; }
+.event-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-meta { color: var(--muted); font-size: 0.85rem; }
+.event-list .btn { flex-shrink: 0; }
 
 .notes ol { margin: 0; padding-left: 1.2rem; color: var(--muted); display: grid; gap: 0.4rem; font-size: 0.9rem; }
 

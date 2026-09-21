@@ -24,6 +24,90 @@
 </header>
 
 <main>
+  <!-- Akce -->
+  <section class="card" aria-labelledby="h-events">
+    <div class="card-head">
+      <h2 id="h-events">Akce</h2>
+      <div class="card-actions">
+        <button type="button" class="btn btn-ghost" id="newEvent">Nová akce</button>
+        <button type="button" class="btn btn-ghost btn-danger" id="deleteEvent">Smazat akci</button>
+      </div>
+    </div>
+    <p class="hint">Každá akce má vlastní seznam delay linek. Akce zapsané v kalendáři telefonu se sem dají převzít
+      přes Google kalendář níže.</p>
+
+    <label class="field">
+      <span>Vybraná akce</span>
+      <select id="eventSelect"></select>
+    </label>
+    <p class="empty" id="eventsEmpty">Zatím žádná akce. Založte ji tlačítkem „Nová akce“, nebo ji převezměte z Google kalendáře.</p>
+
+    <div class="grid grid-2" id="eventForm">
+      <label class="field">
+        <span>Název</span>
+        <input type="text" id="eventName" maxlength="120" placeholder="Ples, koncert, konference…">
+      </label>
+      <label class="field">
+        <span>Začátek</span>
+        <input type="datetime-local" id="eventStart">
+      </label>
+      <label class="field">
+        <span>Místo</span>
+        <input type="text" id="eventLocation" maxlength="120" placeholder="Sál, klub, náměstí…">
+      </label>
+      <label class="field">
+        <span>Poznámka</span>
+        <input type="text" id="eventNote" maxlength="120">
+      </label>
+    </div>
+    <p class="status" id="eventOrigin" hidden></p>
+
+    <details class="google" id="googlePanel">
+      <summary>Google kalendář</summary>
+      <p class="hint">Akci zapište v kalendáři telefonu do účtu Google. Po přihlášení ji tady načtete a převezmete
+        včetně názvu, termínu a místa. Aplikace kalendář jen čte, nic do něj nezapisuje.</p>
+
+      <div class="grid grid-2">
+        <label class="field">
+          <span>Google client ID</span>
+          <input type="text" id="googleClientId" autocomplete="off" spellcheck="false"
+                 placeholder="…apps.googleusercontent.com">
+          <small class="field-help">OAuth client ID typu „Webová aplikace“ z Google Cloud Console. Postup je v README.</small>
+        </label>
+        <div class="field">
+          <span>Účet</span>
+          <div class="card-actions">
+            <button type="button" class="btn" id="googleSignIn">Přihlásit ke Google</button>
+            <button type="button" class="btn btn-ghost" id="googleSignOut" hidden>Odhlásit</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" id="googleTools" hidden>
+        <label class="field">
+          <span>Kalendář</span>
+          <select id="googleCalendar"></select>
+        </label>
+        <label class="field">
+          <span>Období</span>
+          <select id="googleRange">
+            <option value="30">příštích 30 dní</option>
+            <option value="90" selected>příštích 90 dní</option>
+            <option value="365">příští rok</option>
+            <option value="-30">uplynulých 30 dní a dál</option>
+          </select>
+        </label>
+        <div class="card-actions">
+          <button type="button" class="btn" id="googleLoad">Načíst události</button>
+          <button type="button" class="btn btn-ghost" id="googleImportAll" hidden>Převzít vše</button>
+        </div>
+      </div>
+
+      <p class="status" id="googleStatus" hidden></p>
+      <ul class="event-list" id="googleList"></ul>
+    </details>
+  </section>
+
   <!-- Podmínky prostředí -->
   <section class="card" aria-labelledby="h-conditions">
     <h2 id="h-conditions">Podmínky a nastavení</h2>
@@ -118,7 +202,7 @@
   <!-- Seznam delay linek -->
   <section class="card" aria-labelledby="h-lines">
     <div class="card-head">
-      <h2 id="h-lines">Delay linky</h2>
+      <h2 id="h-lines">Delay linky <span class="h-sub" id="linesEventName"></span></h2>
       <div class="card-actions">
         <button type="button" class="btn btn-ghost" id="newLine">Nová linka</button>
         <button type="button" class="btn btn-ghost" id="exportCsv">Export CSV</button>
@@ -141,7 +225,7 @@
         <tbody id="linesBody"></tbody>
       </table>
     </div>
-    <p class="empty" id="linesEmpty">Zatím žádné linky. Přidejte první tlačítkem výše – uloží se do prohlížeče.</p>
+    <p class="empty" id="linesEmpty">Zatím žádné linky. Přidejte první tlačítkem výše – uloží se do prohlížeče k vybrané akci.</p>
   </section>
 
   <!-- Zpětný převod -->
@@ -194,7 +278,7 @@
 </main>
 
 <footer>
-  <p>Data se ukládají jen ve vašem prohlížeči. Funguje i offline.</p>
+  <p>Data se ukládají jen ve vašem prohlížeči. Funguje i offline; Google kalendář vyžaduje připojení.</p>
 </footer>
 
 <script type="module" src="js/app.js"></script>
