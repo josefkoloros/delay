@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odeslat SMS HIT 9</title>
+<style>
+  body{font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;background:#f4f4f4;text-align:center}
+  a{display:inline-block;padding:18px 32px;background:#25d366;color:#fff;font-size:20px;border-radius:12px;text-decoration:none}
+  p{color:#555}
+</style>
+</head>
+<body>
+<div>
+  <p>Otevírám SMS na číslo 9001103…</p>
+  <a id="sms" href="sms:9001103?&body=HIT%209">Odeslat SMS „HIT 9“</a>
+</div>
+<script>
+  setTimeout(function(){ location.href = "sms:9001103?&body=HIT%209"; }, 300);
+</script>
+</body>
+</html>
