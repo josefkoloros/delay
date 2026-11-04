@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Bereme Dashu</title>
+<style>
+  :root{--bg:#f3f5f4;--fg:#18211d;--muted:#5b6862;--card:#fff;--line:#d5dcd8;--accent:#0f7a4a;--accent-fg:#fff;color-scheme:light dark}
+  @media (prefers-color-scheme:dark){:root{--bg:#111815;--fg:#e8efeb;--muted:#9aa9a1;--card:#1a241f;--line:#2c3a33;--accent:#3ecf8e;--accent-fg:#06150e}}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,system-ui,sans-serif;font-size:16px;line-height:1.5;padding:32px 16px}
+  main{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+  h1{font-size:1.7rem;margin:0}
+  p{margin:0;color:var(--muted)}
+  .go{display:block;background:var(--accent);color:var(--accent-fg);padding:16px;font-size:1.1rem;font-weight:600;border-radius:8px;text-align:center;text-decoration:none}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
+  .label{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .val{font-size:1.5rem;font-weight:700}
+</style>
+</head>
+<body>
+<main id="live">
+  <h1>Bereme Dashu!</h1>
+  <p>V České dvanáctce, hitparádě Dvojky a regionálních stanic Českého rozhlasu, hlasujeme pro Dashu a její písničku <strong>Vyplouvám</strong>. Je to HIT 9. Hlasuje se SMS ve tvaru HIT (mezera) číslo písničky 1–12 na číslo 900 11 03. Jedna SMS stojí 3 Kč.</p>
+  <p>Klepněte na tlačítko. Otevře se SMS s vyplněným číslem a textem HIT 9. Zprávu pak odešlete sami.</p>
+  <a class="go" id="sms" href="sms:9001103?&amp;body=HIT%209">Otevřít SMS</a>
+  <div class="card">
+    <div><div class="label">Číslo</div><div class="val">900 11 03</div></div>
+    <div><div class="label">Text zprávy</div><div class="val">HIT 9</div></div>
+  </div>
+</main>
+<main id="expired" hidden>
+  <h1>Odkaz už nefunguje</h1>
+  <p>Platnost tohoto odkazu skončila v neděli 8. 11. 2026 v 16:00.</p>
+</main>
+<script>
+  // Platnost: neděle 8. 11. 2026, 16:00 středoevropského času (15:00 UTC)
+  if (Date.now() >= Date.UTC(2026, 10, 8, 15, 0, 0)) {
+    document.getElementById('live').remove();
+    document.getElementById('expired').hidden = false;
+  }
+</script>
+</body>
+</html>
